@@ -1,165 +1,154 @@
+#############################################
+# Import Libraries and modules
+#############################################
 import logging
-import cv2
-import pyscreenshot as ImageGrab
+import random
 import numpy as np
-import autopy
-from matplotlib import pyplot as plt
-
+from collections import deque
+import pyscreenshot
+import cv2
+import pyautogui
 import pyaudio
 import wave
 import audioop
-from collections import deque
-import os
 import time
 import math
-import psutil
 
-dev = False
-
-screen_size = None
-screen_start_point = None
-screen_end_point = None
+#############################################
+# Warning Filter
+#############################################
 
 
+#############################################
+# Logging for Module
+#############################################
+logger_name = "fishbot_logger"
+FORMAT = 'apimethod''%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(format=FORMAT)
+logger = logging.getLogger(logger_name)
+logger.setLevel(logging.INFO)
 
-def check_process():
-	print 'Checking WoW is running'
-	wow_process_names = ["World of Warcraft"]
-	running = False
-	for pid in psutil.pids():
-		p = psutil.Process(pid)
-		if any(p.name() in s for s in wow_process_names):
-			print(p.name())
-			running = True
-	if not running and not dev:
-		print 'WoW is not running'
-		exit()
-	print 'WoW is running'
-		# raw_input('Pleas e put your fishing-rod on key 1, zoom-in to max, move camera on fishing-float and press any key')
+#############################################
+# Global Variables
+#############################################
+random.seed(time.time())
+
+#############################################
+# Function / Class Definitions
+#############################################
+class FishBot(object):
+	def __init__(self, threshold=0.8, box=(0.3, 0.3, 0.7, 0.7)):
+		self.threshold = threshold
+		img = pyscreenshot.grab()
+		self.screen_size = img.size
+		self.box_start_point = (self.screen_size[0] * box[0], self.screen_size[1] * box[1])
+		self.box_end_point = (self.screen_size[0] * box[2], self.screen_size[1] * box[3])
+
+	@staticmethod
+	def logout():
+		pyautogui.typewrite(message="/logout\n", interval=0.2)
+
+	@staticmethod
+	def login():
+		pyautogui.press(keys='enter')
+		time.sleep(30 + random.random()*10)  # wait for loading
+
+	@staticmethod
+	def send_float():
+		logger.info("Sending float")
+		pyautogui.press(keys='1')
+		logger.info("Wait for animation")
+		time.sleep(2)
+
+	@staticmethod
+	def move_mouse(cursor_xy):
+		logger.info("Moving cursor to " + str(cursor_xy))
+		pyautogui.moveTo(x=cursor_xy[0], y=cursor_xy[1],
+						 duration=0.3+ 0.3*random.random(),
+						 tween=pyautogui.easeOutBounce)
+
+	@staticmethod
+	def snatch():
+		logger.info('Snatching!')
+		pyautogui.click(button='right')
+
+	def make_screenshot(self):
+		logger.info("Capturing screen")
+		screenshot = pyscreenshot.grab(bbox=(self.box_start_point[0], self.box_start_point[1],
+											 self.box_end_point[0], self.box_end_point[1]))
+		screenshot_filepath = 'fishing_session/screenshot.png'
+		screenshot.save(screenshot_filepath)
+
+	def find_float(self):
+		logger.info("searching for float")
+		for i in range(0, 7):
+			template = cv2.imread(f'float_template/fishing_float_{i}.png', 0)
+			screenshot = cv2.imread('fishing_session/screenshot.png')
+			w, h = template.shape[1::-1]
+			result = cv2.matchTemplate(image=screenshot, templ=template, method=cv2.TM_CCORR_NORMED)
+			corr_min, corr_max, min_loc, max_loc = cv2.minMaxLoc(result)
+			tagged_img = cv2.rectangle(img=screenshot, pt1=max_loc,
+										   pt2=(max_loc[0] + w, max_loc[1] + h),
+										   color=(0,0,255), thickness=2, )
+			timestamp = time.strftime('%m%d%H%M%S', time.localtime())
+			if corr_max >= self.threshold:
+				logger.info(f"Found float {i}!")
+				filename = f'fishing_session/success/corr_{corr_max}_{timestamp}.png'
+				cv2.imwrite(filename=filename, img=tagged_img)
+				float_coordinate_in_box = (max_loc[0] + 2* w / 3, max_loc[1] + 2* h / 3)
+				float_cursor_x = self.box_start_point[0] + float_coordinate_in_box[0]
+				float_cursor_y = self.box_start_point[1] + float_coordinate_in_box[1]
+				return int(float_cursor_x), int(float_cursor_y)
+			else:
+				logger.info(f"Failed to find the float. Save the screenshot for analysis.")
+				filename = f'fishing_session/failed/corr_{corr_max}_{timestamp}.png'
+				cv2.imwrite(filename=filename, img=tagged_img)
+				return None
+
+	def listen_splash(self):
+		logger.info("listening for loud splash sounds...")
+		CHUNK = 1024  # CHUNKS of bytes to read each time
+		FORMAT = pyaudio.paInt16
+		CHANNELS = 2
+		RATE = 18000
+		THRESHOLD = 1200  # The threshold intensity that defines silence
+						  # and noise signal (an int. lower than THRESHOLD is silence).
+		SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
+						   # only silence is recorded. When this time passes the
+						   # recording finishes and the file is delivered.
+		#Open stream
+		p = pyaudio.PyAudio()
+
+		stream = p.open(format=FORMAT,
+						channels=CHANNELS,
+						rate=RATE,
+						input=True,
+						frames_per_buffer=CHUNK)
+		cur_data = ''  # current chunk  of audio data
+		rel = RATE/CHUNK
+		slid_win = deque(maxlen=SILENCE_LIMIT * rel)
 
 
-
-def check_screen_size():
-	print "Checking screen size"
-	img = ImageGrab.grab()
-	# img.save('temp.png')
-	global screen_size
-	global screen_start_point
-	global screen_end_point
-
-	screen_size = (img.size[0] / 2, img.size[1] / 2)
-	screen_start_point = (screen_size[0] * 0.35, screen_size[1] * 0.35)
-	screen_end_point = (screen_size[0] * 0.65, screen_size[1] * 0.65)
-	print ("Screen size is " + str(screen_size))
-
-
-def send_float():
-	print 'Sending float'
-	autopy.key.tap(u'1')
-	print 'Float is sent, waiting animation'
-	time.sleep(2)
-
-def jump():
-	print 'Jump!'
-	# autopy.key.tap(u' ')
-	time.sleep(1)
-
-def make_screenshot():
-	print 'Capturing screen'
-	print(screen_start_point)
-	screenshot = ImageGrab.grab(bbox=(screen_start_point[0], screen_start_point[1], screen_end_point[0], screen_end_point[1])) # (0, 710, 410, 1010)
-	if dev:
-		screenshot_name = 'var/fishing_session_' + str(int(time.time())) + '.png'
-	else:
-		screenshot_name = 'var/fishing_session.png'
-	screenshot.save(screenshot_name)
-	return screenshot_name
-
-def find_float(img_name):
-	print 'Looking for float'
-	# todo: maybe make some universal float without background?
-	for x in range(0, 7):
-		template = cv2.imread('var/fishing_float_' + str(x) + '.png', 0)
-
-		img_rgb = cv2.imread(img_name)
-		img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-		# print('got images')
-		w, h = template.shape[::-1]
-		res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
-		threshold = 0.6
-		loc = np.where( res >= threshold)
-		for pt in zip(*loc[::-1]):
-		    cv2.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
-		if loc[0].any():
-			print 'Found ' + str(x) + ' float'
-			if dev:
-				cv2.imwrite('var/fishing_session_' + str(int(time.time())) + '_success.png', img_rgb)
-			return (loc[1][0] + w / 2) / 2, (loc[0][0] + h / 2) / 2
-
-
-def move_mouse(place):
-	x,y = place[0], place[1]
-	print("Moving cursor to " + str(place))
-	autopy.mouse.smooth_move(int(screen_start_point[0]) + x , int(screen_start_point[1]) + y)
-
-def listen():
-	print 'Well, now we are listening for loud sounds...'
-	CHUNK = 1024  # CHUNKS of bytes to read each time from mic
-	FORMAT = pyaudio.paInt16
-	CHANNELS = 2
-	RATE = 18000
-	THRESHOLD = 1200  # The threshold intensity that defines silence
-	                  # and noise signal (an int. lower than THRESHOLD is silence).
-	SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
-	                   # only silence is recorded. When this time passes the
-	                   # recording finishes and the file is delivered.
-	#Open stream
-	p = pyaudio.PyAudio()
-
-	stream = p.open(format=FORMAT,
-	                channels=CHANNELS,
-	                rate=RATE,
-	                input=True,
-	                frames_per_buffer=CHUNK)
-	cur_data = ''  # current chunk  of audio data
-	rel = RATE/CHUNK
-	slid_win = deque(maxlen=SILENCE_LIMIT * rel)
-
-
-	success = False
-	listening_start_time = time.time()
-	while True:
-		try:
-			cur_data = stream.read(CHUNK)
-			slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
-			if(sum([x > THRESHOLD for x in slid_win]) > 0):
-				print 'I heart something!'
-				success = True
+		success = False
+		listening_start_time = time.time()
+		while True:
+			try:
+				cur_data = stream.read(CHUNK)
+				slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
+				if(sum([x > THRESHOLD for x in slid_win]) > 0):
+					print 'I heart something!'
+					success = True
+					break
+				if time.time() - listening_start_time > 20:
+					print 'I don\'t hear anything already 20 seconds!'
+					break
+			except IOError:
 				break
-			if time.time() - listening_start_time > 20:
-				print 'I don\'t hear anything already 20 seconds!'
-				break
-		except IOError:
-			break
 
-	# print "* Done recording: " + str(time.time() - start)
-	stream.close()
-	p.terminate()
-	return success
-
-def snatch():
-	print('Snatching!')
-	autopy.mouse.click(autopy.mouse.RIGHT_BUTTON)
-
-def logout():
-	autopy.key.tap(long(autopy.key.K_RETURN))
-	time.sleep(0.1)
-	for c in u'/logout':
-		time.sleep(0.1)
-		autopy.key.tap(c)
-	time.sleep(0.1)
-
-	autopy.key.tap(long(autopy.key.K_RETURN))
+		# print "* Done recording: " + str(time.time() - start)
+		stream.close()
+		p.terminate()
+		return success
 
 def main():
 	if check_process() and not dev:

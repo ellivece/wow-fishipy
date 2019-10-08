@@ -9,10 +9,8 @@ import pyscreenshot
 import cv2
 import pyautogui
 import pyaudio
-import wave
 import audioop
 import time
-import math
 
 #############################################
 # Warning Filter
@@ -37,12 +35,18 @@ random.seed(time.time())
 # Function / Class Definitions
 #############################################
 class FishBot(object):
-	def __init__(self, threshold=0.8, box=(0.3, 0.3, 0.7, 0.7)):
-		self.threshold = threshold
-		img = pyscreenshot.grab()
-		self.screen_size = img.size
+	def __init__(self, img_thresh=0.8, sound_thresh=1200, box=(0.3, 0.3, 0.7, 0.7)):
+		self.img_thresh = img_thresh
+		self.sound_thresh = sound_thresh
+		self.screen_size = pyscreenshot.grab().size
 		self.box_start_point = (self.screen_size[0] * box[0], self.screen_size[1] * box[1])
 		self.box_end_point = (self.screen_size[0] * box[2], self.screen_size[1] * box[3])
+		logger.info(f"Current screenshot box: top-left{self.box_start_point}, "
+					f"bottom-right {self.box_end_point}, CORR threshold {self.img_thresh}")
+		self.background_rms = self.get_background_sound_rms_benchmark()
+		logger.info(f"Current background sound RMS: {self.background_rms}, "
+					f"RMS_threshold: {sound_thresh}")
+
 
 	@staticmethod
 	def logout():
@@ -91,7 +95,7 @@ class FishBot(object):
 										   pt2=(max_loc[0] + w, max_loc[1] + h),
 										   color=(0,0,255), thickness=2, )
 			timestamp = time.strftime('%m%d%H%M%S', time.localtime())
-			if corr_max >= self.threshold:
+			if corr_max >= self.img_thresh:
 				logger.info(f"Found float {i}!")
 				filename = f'fishing_session/success/corr_{corr_max}_{timestamp}.png'
 				cv2.imwrite(filename=filename, img=tagged_img)
@@ -105,49 +109,75 @@ class FishBot(object):
 				cv2.imwrite(filename=filename, img=tagged_img)
 				return None
 
-	def listen_splash(self):
-		logger.info("listening for loud splash sounds...")
-		CHUNK = 1024  # CHUNKS of bytes to read each time
-		FORMAT = pyaudio.paInt16
-		CHANNELS = 2
-		RATE = 18000
-		THRESHOLD = 1200  # The threshold intensity that defines silence
-						  # and noise signal (an int. lower than THRESHOLD is silence).
-		SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
-						   # only silence is recorded. When this time passes the
-						   # recording finishes and the file is delivered.
+	@staticmethod
+	def get_background_sound_rms_benchmark():
+		logger.info("Checking for the benchmark RMS of background sounds...")
+		background_test_duration = 5
+
+		p = pyaudio.PyAudio()
+		input_device_info = p.get_default_input_device_info()
+		channels = int(input_device_info['maxInputChannels'])
+		rate = int(input_device_info['defaultSampleRate'])
+		chunk = 1024  # number of frames to read each time
+		stream = p.open(rate=rate,
+						channels=channels,
+						format=pyaudio.paInt16,
+						input=True,
+						frames_per_buffer=chunk)
+		rms_window = list()
+
+		listening_start_time = time.time()
+		while time.time() - listening_start_time <= background_test_duration:
+			try:
+				data = stream.read(chunk)
+				rms_window.append(audioop.rms(data, 2))
+			except IOError:
+				break
+		stream.stop_stream()
+		stream.close()
+		p.terminate()
+
+		return np.mean(rms_window)
+
+	@staticmethod
+	def listen_splash():
+		logger.info("listening for splash sounds...")
+		splash_sound_duration = 0.3
+		fishing_duration = 20
+
 		#Open stream
 		p = pyaudio.PyAudio()
-
-		stream = p.open(format=FORMAT,
-						channels=CHANNELS,
-						rate=RATE,
+		input_device_info = p.get_default_input_device_info()
+		channels = int(input_device_info['maxInputChannels'])
+		rate = int(input_device_info['defaultSampleRate'])
+		chunk = 1024  # number of frames to read each time
+		stream = p.open(rate=rate,
+						channels=channels,
+						format=pyaudio.paInt16,
 						input=True,
-						frames_per_buffer=CHUNK)
-		cur_data = ''  # current chunk  of audio data
-		rel = RATE/CHUNK
-		slid_win = deque(maxlen=SILENCE_LIMIT * rel)
-
+						frames_per_buffer=chunk)
+		rms_window = deque(maxlen=int((splash_sound_duration * rate)/chunk))
 
 		success = False
 		listening_start_time = time.time()
 		while True:
 			try:
-				cur_data = stream.read(CHUNK)
-				slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
-				if(sum([x > THRESHOLD for x in slid_win]) > 0):
-					print 'I heart something!'
+				data = stream.read(chunk)
+				rms_window.append(audioop.rms(data, 2))
+				if np.mean(rms_window) > 0:
+					logger.info("Heard something loud!")
 					success = True
 					break
-				if time.time() - listening_start_time > 20:
-					print 'I don\'t hear anything already 20 seconds!'
+				if time.time() - listening_start_time > fishing_duration:
+					logger.info("Failed to hear anything in 20 seconds!")
 					break
 			except IOError:
 				break
 
-		# print "* Done recording: " + str(time.time() - start)
+		stream.stop_stream()
 		stream.close()
 		p.terminate()
+
 		return success
 
 def main():

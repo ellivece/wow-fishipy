@@ -37,10 +37,11 @@ random.seed(time.time())
 # Function / Class Definitions
 #############################################
 class FishBot(object):
-    def __init__(self, img_thresh=0.8, sound_thresh=300, box=(0.3, 0.3, 0.7, 0.7)):
+    def __init__(self, img_thresh=0.8, sound_thresh=200, box=(0.3, 0.2, 0.7, 0.8)):
         self.img_thresh = img_thresh
         self.sound_thresh = sound_thresh
         self.screen_size = pyscreenshot.grab().size
+        self.save_success = False
         self.box_start_point = (self.screen_size[0] * box[0], self.screen_size[1] * box[1])
         self.box_end_point = (self.screen_size[0] * box[2], self.screen_size[1] * box[3])
         logger.info(f"Current screenshot box: top-left{self.box_start_point}, "
@@ -72,23 +73,32 @@ class FishBot(object):
                          duration=0.3 + 0.3 * random.random(),
                          tween=pyautogui.easeOutBounce)
 
+    def reset_mouse(self):
+        pyautogui.moveTo(x=self.box_end_point[0], y=self.box_end_point[1],
+                         duration=0.3 + 0.3 * random.random(),
+                         tween=pyautogui.easeOutCirc)
+
     @staticmethod
     def snatch():
         logger.info('Snatching!')
-        pyautogui.click(button='right')
+        time.sleep(random.random())
+        pyautogui.click(button='right', clicks=2, interval=0.4, duration=0.3)
 
-    def make_screenshot(self):
+    def make_screenshot(self, i=None):
         logger.info("Capturing screen")
         screenshot = pyscreenshot.grab(bbox=(self.box_start_point[0], self.box_start_point[1],
                                              self.box_end_point[0], self.box_end_point[1]))
-        screenshot_filepath = ensure_dir('fishing_session/screenshot.png')
+        if i is None:
+            screenshot_filepath = ensure_dir('fishing_session/screenshot.png')
+        else:
+            screenshot_filepath = ensure_dir(f'fishing_session/fishing_float_{i}.png')
         screenshot.save(screenshot_filepath)
 
     def find_float(self):
         logger.info("searching for float")
-        for i in range(0, 7):
-            template = cv2.imread(f'float_template/fishing_float_{i}.png', 0)
-            screenshot = cv2.imread('fishing_session/screenshot.png')
+        for i in range(0, 4):
+            template = cv2.imread(f'float_template/fishing_float_{i}.png', 1)
+            screenshot = cv2.imread('fishing_session/screenshot.png', 1)
             w, h = template.shape[1::-1]
             result = cv2.matchTemplate(image=screenshot, templ=template, method=cv2.TM_CCORR_NORMED)
             corr_min, corr_max, min_loc, max_loc = cv2.minMaxLoc(result)
@@ -98,15 +108,16 @@ class FishBot(object):
             timestamp = time.strftime('%m%d%H%M%S', time.localtime())
             if corr_max >= self.img_thresh:
                 logger.info(f"Found float {i}!")
-                filename = ensure_dir(f'fishing_session/success/corr_{corr_max}_{timestamp}.png')
-                cv2.imwrite(filename=filename, img=tagged_img)
+                if self.save_success:
+                    filename = ensure_dir(f'fishing_session/success/{corr_max:.2f}_{timestamp}.png')
+                    cv2.imwrite(filename=filename, img=tagged_img)
                 float_coordinate_in_box = (max_loc[0] + 2 * w / 3, max_loc[1] + 2 * h / 3)
                 float_cursor_x = self.box_start_point[0] + float_coordinate_in_box[0]
                 float_cursor_y = self.box_start_point[1] + float_coordinate_in_box[1]
                 return int(float_cursor_x), int(float_cursor_y)
             else:
                 logger.info(f"Failed to find the float. Save the screenshot for analysis.")
-                filename = ensure_dir(f'fishing_session/failed/corr_{corr_max}_{timestamp}.png')
+                filename = ensure_dir(f'fishing_session/failed/{corr_max:.2f}_{timestamp}.png')
                 cv2.imwrite(filename=filename, img=tagged_img)
                 return None
 
@@ -140,11 +151,10 @@ class FishBot(object):
 
         return np.mean(rms_window)
 
-    @staticmethod
-    def listen_splash():
+    def listen_splash(self):
         logger.info("listening for splash sounds...")
         splash_sound_duration = 0.2
-        fishing_duration = 20
+        fishing_duration = 30
 
         # Open stream
         p = pyaudio.PyAudio()
@@ -165,8 +175,9 @@ class FishBot(object):
             try:
                 data = stream.read(chunk)
                 rms_window.append(audioop.rms(data, 2))
-                if np.mean(rms_window) > 0:
-                    logger.info("Heard something loud!")
+                rms = np.mean(rms_window)
+                if rms > self.sound_thresh:
+                    logger.info(f"RMS: {rms}. Heard something loud!")
                     success = True
                     break
                 if time.time() - listening_start_time > fishing_duration:
@@ -181,13 +192,17 @@ class FishBot(object):
 
         return success
 
+    def get_fishing_float_template(self, n=20):
+        for i in range(n):
+            self.send_float()
+            self.make_screenshot(i)
+
     def start_fish(self):
-        logger.info("Waiting 5 seconds, so you can switch to WoW")
-        time.sleep(5)
         tries = 0
         catched = 0
 
         while True:
+            self.reset_mouse()
             tries += 1
             self.send_float()
             self.make_screenshot()
@@ -213,5 +228,6 @@ class FishBot(object):
 # Main Function
 #############################################
 if __name__ == '__main__':
-    fb = FishBot()
+    fb = FishBot(img_thresh=0.8, sound_thresh=180, box=(0.3, 0.2, 0.7, 0.8))
     fb.start_fish()
+    # fb.get_fishing_float_template(n=20)

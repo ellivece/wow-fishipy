@@ -71,10 +71,11 @@ class FishBot(object):
         logger.info("Moving cursor to " + str(cursor_xy))
         pyautogui.moveTo(x=cursor_xy[0], y=cursor_xy[1],
                          duration=0.3 + 0.3 * random.random(),
-                         tween=pyautogui.easeOutBounce)
+                         tween=pyautogui.easeOutCirc)
 
     def reset_mouse(self):
-        pyautogui.moveTo(x=self.box_end_point[0], y=self.box_end_point[1],
+        pyautogui.moveTo(x=self.box_end_point[0] + random.randint(1, 100),
+                         y=self.box_end_point[1] + random.randint(1, 100),
                          duration=0.3 + 0.3 * random.random(),
                          tween=pyautogui.easeOutCirc)
 
@@ -228,6 +229,6 @@ class FishBot(object):
 # Main Function
 #############################################
 if __name__ == '__main__':
-    fb = FishBot(img_thresh=0.8, sound_thresh=180, box=(0.3, 0.2, 0.7, 0.8))
+    fb = FishBot(img_thresh=0.8, sound_thresh=160, box=(0.3, 0.2, 0.7, 0.8))
     fb.start_fish()
     # fb.get_fishing_float_template(n=20)

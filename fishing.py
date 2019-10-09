@@ -107,7 +107,7 @@ class FishBot(object):
                                        color=(0, 0, 255), thickness=2, )
             timestamp = time.strftime('%m%d%H%M%S', time.localtime())
             if corr_max >= self.img_thresh:
-                logger.info(f"Found float {i}!")
+                logger.info(f"Found float {i}, {corr_max:.2f}!")
                 if self.save_success:
                     filename = ensure_dir(f'fishing_session/success/{corr_max:.2f}_{timestamp}.png')
                     cv2.imwrite(filename=filename, img=tagged_img)

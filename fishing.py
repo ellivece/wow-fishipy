@@ -11,6 +11,7 @@ import pyautogui
 import pyaudio
 import audioop
 import time
+from av_helpers.file_helpers import ensure_dir
 
 #############################################
 # Warning Filter
@@ -80,7 +81,7 @@ class FishBot(object):
         logger.info("Capturing screen")
         screenshot = pyscreenshot.grab(bbox=(self.box_start_point[0], self.box_start_point[1],
                                              self.box_end_point[0], self.box_end_point[1]))
-        screenshot_filepath = 'fishing_session/screenshot.png'
+        screenshot_filepath = ensure_dir('fishing_session/screenshot.png')
         screenshot.save(screenshot_filepath)
 
     def find_float(self):
@@ -97,7 +98,7 @@ class FishBot(object):
             timestamp = time.strftime('%m%d%H%M%S', time.localtime())
             if corr_max >= self.img_thresh:
                 logger.info(f"Found float {i}!")
-                filename = f'fishing_session/success/corr_{corr_max}_{timestamp}.png'
+                filename = ensure_dir(f'fishing_session/success/corr_{corr_max}_{timestamp}.png')
                 cv2.imwrite(filename=filename, img=tagged_img)
                 float_coordinate_in_box = (max_loc[0] + 2 * w / 3, max_loc[1] + 2 * h / 3)
                 float_cursor_x = self.box_start_point[0] + float_coordinate_in_box[0]
@@ -105,7 +106,7 @@ class FishBot(object):
                 return int(float_cursor_x), int(float_cursor_y)
             else:
                 logger.info(f"Failed to find the float. Save the screenshot for analysis.")
-                filename = f'fishing_session/failed/corr_{corr_max}_{timestamp}.png'
+                filename = ensure_dir(f'fishing_session/failed/corr_{corr_max}_{timestamp}.png')
                 cv2.imwrite(filename=filename, img=tagged_img)
                 return None
 
@@ -213,3 +214,4 @@ class FishBot(object):
 #############################################
 if __name__ == '__main__':
     fb = FishBot()
+    fb.start_fish()

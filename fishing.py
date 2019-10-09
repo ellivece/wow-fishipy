@@ -31,191 +31,185 @@ logger.setLevel(logging.INFO)
 #############################################
 random.seed(time.time())
 
+
 #############################################
 # Function / Class Definitions
 #############################################
 class FishBot(object):
-	def __init__(self, img_thresh=0.8, sound_thresh=1200, box=(0.3, 0.3, 0.7, 0.7)):
-		self.img_thresh = img_thresh
-		self.sound_thresh = sound_thresh
-		self.screen_size = pyscreenshot.grab().size
-		self.box_start_point = (self.screen_size[0] * box[0], self.screen_size[1] * box[1])
-		self.box_end_point = (self.screen_size[0] * box[2], self.screen_size[1] * box[3])
-		logger.info(f"Current screenshot box: top-left{self.box_start_point}, "
-					f"bottom-right {self.box_end_point}, CORR threshold {self.img_thresh}")
-		self.background_rms = self.get_background_sound_rms_benchmark()
-		logger.info(f"Current background sound RMS: {self.background_rms}, "
-					f"RMS_threshold: {sound_thresh}")
+    def __init__(self, img_thresh=0.8, sound_thresh=300, box=(0.3, 0.3, 0.7, 0.7)):
+        self.img_thresh = img_thresh
+        self.sound_thresh = sound_thresh
+        self.screen_size = pyscreenshot.grab().size
+        self.box_start_point = (self.screen_size[0] * box[0], self.screen_size[1] * box[1])
+        self.box_end_point = (self.screen_size[0] * box[2], self.screen_size[1] * box[3])
+        logger.info(f"Current screenshot box: top-left{self.box_start_point}, "
+                    f"bottom-right {self.box_end_point}, CORR threshold {self.img_thresh}")
+        self.background_rms = self.get_background_sound_rms_benchmark()
+        logger.info(f"Current background sound RMS: {self.background_rms}, "
+                    f"RMS_threshold: {sound_thresh}")
+
+    @staticmethod
+    def logout():
+        pyautogui.typewrite(message="/logout\n", interval=0.2)
+
+    @staticmethod
+    def login():
+        pyautogui.press(keys='enter')
+        time.sleep(30 + random.random() * 10)  # wait for loading
+
+    @staticmethod
+    def send_float():
+        logger.info("Sending float")
+        pyautogui.press(keys='1')
+        logger.info("Wait for animation")
+        time.sleep(2)
+
+    @staticmethod
+    def move_mouse(cursor_xy):
+        logger.info("Moving cursor to " + str(cursor_xy))
+        pyautogui.moveTo(x=cursor_xy[0], y=cursor_xy[1],
+                         duration=0.3 + 0.3 * random.random(),
+                         tween=pyautogui.easeOutBounce)
+
+    @staticmethod
+    def snatch():
+        logger.info('Snatching!')
+        pyautogui.click(button='right')
+
+    def make_screenshot(self):
+        logger.info("Capturing screen")
+        screenshot = pyscreenshot.grab(bbox=(self.box_start_point[0], self.box_start_point[1],
+                                             self.box_end_point[0], self.box_end_point[1]))
+        screenshot_filepath = 'fishing_session/screenshot.png'
+        screenshot.save(screenshot_filepath)
+
+    def find_float(self):
+        logger.info("searching for float")
+        for i in range(0, 7):
+            template = cv2.imread(f'float_template/fishing_float_{i}.png', 0)
+            screenshot = cv2.imread('fishing_session/screenshot.png')
+            w, h = template.shape[1::-1]
+            result = cv2.matchTemplate(image=screenshot, templ=template, method=cv2.TM_CCORR_NORMED)
+            corr_min, corr_max, min_loc, max_loc = cv2.minMaxLoc(result)
+            tagged_img = cv2.rectangle(img=screenshot, pt1=max_loc,
+                                       pt2=(max_loc[0] + w, max_loc[1] + h),
+                                       color=(0, 0, 255), thickness=2, )
+            timestamp = time.strftime('%m%d%H%M%S', time.localtime())
+            if corr_max >= self.img_thresh:
+                logger.info(f"Found float {i}!")
+                filename = f'fishing_session/success/corr_{corr_max}_{timestamp}.png'
+                cv2.imwrite(filename=filename, img=tagged_img)
+                float_coordinate_in_box = (max_loc[0] + 2 * w / 3, max_loc[1] + 2 * h / 3)
+                float_cursor_x = self.box_start_point[0] + float_coordinate_in_box[0]
+                float_cursor_y = self.box_start_point[1] + float_coordinate_in_box[1]
+                return int(float_cursor_x), int(float_cursor_y)
+            else:
+                logger.info(f"Failed to find the float. Save the screenshot for analysis.")
+                filename = f'fishing_session/failed/corr_{corr_max}_{timestamp}.png'
+                cv2.imwrite(filename=filename, img=tagged_img)
+                return None
+
+    @staticmethod
+    def get_background_sound_rms_benchmark():
+        logger.info("Checking for the benchmark RMS of background sounds...")
+        background_test_duration = 5
+
+        p = pyaudio.PyAudio()
+        input_device_info = p.get_default_input_device_info()
+        channels = int(input_device_info['maxInputChannels'])
+        rate = int(input_device_info['defaultSampleRate'])
+        chunk = 1024  # number of frames to read each time
+        stream = p.open(rate=rate,
+                        channels=channels,
+                        format=pyaudio.paInt16,
+                        input=True,
+                        frames_per_buffer=chunk)
+        rms_window = list()
+
+        listening_start_time = time.time()
+        while time.time() - listening_start_time <= background_test_duration:
+            try:
+                data = stream.read(chunk)
+                rms_window.append(audioop.rms(data, 2))
+            except IOError:
+                break
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+        return np.mean(rms_window)
+
+    @staticmethod
+    def listen_splash():
+        logger.info("listening for splash sounds...")
+        splash_sound_duration = 0.2
+        fishing_duration = 20
+
+        # Open stream
+        p = pyaudio.PyAudio()
+        input_device_info = p.get_default_input_device_info()
+        channels = int(input_device_info['maxInputChannels'])
+        rate = int(input_device_info['defaultSampleRate'])
+        chunk = 1024  # number of frames to read each time
+        stream = p.open(rate=rate,
+                        channels=channels,
+                        format=pyaudio.paInt16,
+                        input=True,
+                        frames_per_buffer=chunk)
+        rms_window = deque(maxlen=int((splash_sound_duration * rate) / chunk))
+
+        success = False
+        listening_start_time = time.time()
+        while True:
+            try:
+                data = stream.read(chunk)
+                rms_window.append(audioop.rms(data, 2))
+                if np.mean(rms_window) > 0:
+                    logger.info("Heard something loud!")
+                    success = True
+                    break
+                if time.time() - listening_start_time > fishing_duration:
+                    logger.info("Failed to hear anything in 20 seconds!")
+                    break
+            except IOError:
+                break
+
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+        return success
+
+    def start_fish(self):
+        logger.info("Waiting 5 seconds, so you can switch to WoW")
+        time.sleep(5)
+        tries = 0
+        catched = 0
+
+        while True:
+            tries += 1
+            self.send_float()
+            self.make_screenshot()
+            cursor_xy = self.find_float()
+            if cursor_xy is None:
+                logger.info("Float was not found, retrying in 1 seconds")
+                time.sleep(random.random())
+                continue
+            logger.info(f"Float found at {cursor_xy}")
+            self.move_mouse(cursor_xy)
+            if not self.listen_splash():
+                time.sleep(1)
+                continue
+            self.snatch()
+            logger.info("snatched something!")
+            catched += 1
+            time.sleep(random.random() * 3)
+            if catched == 500:
+                break
 
 
-	@staticmethod
-	def logout():
-		pyautogui.typewrite(message="/logout\n", interval=0.2)
-
-	@staticmethod
-	def login():
-		pyautogui.press(keys='enter')
-		time.sleep(30 + random.random()*10)  # wait for loading
-
-	@staticmethod
-	def send_float():
-		logger.info("Sending float")
-		pyautogui.press(keys='1')
-		logger.info("Wait for animation")
-		time.sleep(2)
-
-	@staticmethod
-	def move_mouse(cursor_xy):
-		logger.info("Moving cursor to " + str(cursor_xy))
-		pyautogui.moveTo(x=cursor_xy[0], y=cursor_xy[1],
-						 duration=0.3+ 0.3*random.random(),
-						 tween=pyautogui.easeOutBounce)
-
-	@staticmethod
-	def snatch():
-		logger.info('Snatching!')
-		pyautogui.click(button='right')
-
-	def make_screenshot(self):
-		logger.info("Capturing screen")
-		screenshot = pyscreenshot.grab(bbox=(self.box_start_point[0], self.box_start_point[1],
-											 self.box_end_point[0], self.box_end_point[1]))
-		screenshot_filepath = 'fishing_session/screenshot.png'
-		screenshot.save(screenshot_filepath)
-
-	def find_float(self):
-		logger.info("searching for float")
-		for i in range(0, 7):
-			template = cv2.imread(f'float_template/fishing_float_{i}.png', 0)
-			screenshot = cv2.imread('fishing_session/screenshot.png')
-			w, h = template.shape[1::-1]
-			result = cv2.matchTemplate(image=screenshot, templ=template, method=cv2.TM_CCORR_NORMED)
-			corr_min, corr_max, min_loc, max_loc = cv2.minMaxLoc(result)
-			tagged_img = cv2.rectangle(img=screenshot, pt1=max_loc,
-										   pt2=(max_loc[0] + w, max_loc[1] + h),
-										   color=(0,0,255), thickness=2, )
-			timestamp = time.strftime('%m%d%H%M%S', time.localtime())
-			if corr_max >= self.img_thresh:
-				logger.info(f"Found float {i}!")
-				filename = f'fishing_session/success/corr_{corr_max}_{timestamp}.png'
-				cv2.imwrite(filename=filename, img=tagged_img)
-				float_coordinate_in_box = (max_loc[0] + 2* w / 3, max_loc[1] + 2* h / 3)
-				float_cursor_x = self.box_start_point[0] + float_coordinate_in_box[0]
-				float_cursor_y = self.box_start_point[1] + float_coordinate_in_box[1]
-				return int(float_cursor_x), int(float_cursor_y)
-			else:
-				logger.info(f"Failed to find the float. Save the screenshot for analysis.")
-				filename = f'fishing_session/failed/corr_{corr_max}_{timestamp}.png'
-				cv2.imwrite(filename=filename, img=tagged_img)
-				return None
-
-	@staticmethod
-	def get_background_sound_rms_benchmark():
-		logger.info("Checking for the benchmark RMS of background sounds...")
-		background_test_duration = 5
-
-		p = pyaudio.PyAudio()
-		input_device_info = p.get_default_input_device_info()
-		channels = int(input_device_info['maxInputChannels'])
-		rate = int(input_device_info['defaultSampleRate'])
-		chunk = 1024  # number of frames to read each time
-		stream = p.open(rate=rate,
-						channels=channels,
-						format=pyaudio.paInt16,
-						input=True,
-						frames_per_buffer=chunk)
-		rms_window = list()
-
-		listening_start_time = time.time()
-		while time.time() - listening_start_time <= background_test_duration:
-			try:
-				data = stream.read(chunk)
-				rms_window.append(audioop.rms(data, 2))
-			except IOError:
-				break
-		stream.stop_stream()
-		stream.close()
-		p.terminate()
-
-		return np.mean(rms_window)
-
-	@staticmethod
-	def listen_splash():
-		logger.info("listening for splash sounds...")
-		splash_sound_duration = 0.3
-		fishing_duration = 20
-
-		#Open stream
-		p = pyaudio.PyAudio()
-		input_device_info = p.get_default_input_device_info()
-		channels = int(input_device_info['maxInputChannels'])
-		rate = int(input_device_info['defaultSampleRate'])
-		chunk = 1024  # number of frames to read each time
-		stream = p.open(rate=rate,
-						channels=channels,
-						format=pyaudio.paInt16,
-						input=True,
-						frames_per_buffer=chunk)
-		rms_window = deque(maxlen=int((splash_sound_duration * rate)/chunk))
-
-		success = False
-		listening_start_time = time.time()
-		while True:
-			try:
-				data = stream.read(chunk)
-				rms_window.append(audioop.rms(data, 2))
-				if np.mean(rms_window) > 0:
-					logger.info("Heard something loud!")
-					success = True
-					break
-				if time.time() - listening_start_time > fishing_duration:
-					logger.info("Failed to hear anything in 20 seconds!")
-					break
-			except IOError:
-				break
-
-		stream.stop_stream()
-		stream.close()
-		p.terminate()
-
-		return success
-
-def main():
-	if check_process() and not dev:
-		print "Waiting 2 seconds, so you can switch to WoW"
-		time.sleep(2)
-
-	check_screen_size()
-	catched = 0
-	tries = 0
-	while not dev:
-		tries += 1
-		send_float()
-		im = make_screenshot()
-		place = find_float(im)
-		if not place:
-			print 'Float was not found, retrying in 2 seconds'
-			time.sleep(3)
-			im = make_screenshot()
-			place = find_float(im)
-			if not place:
-				print 'Still can\'t find float, breaking this session'
-				jump()
-				continue
-		print('Float found at ' + str(place))
-		move_mouse(place)
-		if not listen():
-			print 'If we didn\' hear anything, lets try again'
-			jump()
-			continue
-		snatch()
-		time.sleep(3)
-		catched += 1
-		print 'I guess we\'ve snatched something'
-		if catched == 250:
-			break
-		time.sleep(3)
-	print 'catched ' + str(catched)
-	logout()
-
-main()
+#############################################
+# Main Function
+#############################################
+if __name__ == '__main__':
+    fb = FishBot()

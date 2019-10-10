@@ -55,8 +55,8 @@ class FishBot(object):
         self.initial_screenshot = cv2.imread('fishing_session/screenshot_initial.png')
         # get background RMS to guide tuning correct level of the sound threshold
         self.background_rms = self.get_background_sound_rms_benchmark()
-        logger.info(f"Current background sound RMS: {self.background_rms}, "
-                    f"RMS_threshold: {sound_thresh}")
+        logger.info(f"Current background sound RMS: {self.background_rms: .2f}, "
+                    f"RMS_threshold: {sound_thresh: .2f}")
 
     @staticmethod
     def logout():
@@ -205,7 +205,7 @@ class FishBot(object):
                 rms_window.append(audioop.rms(data, 2))
                 rms = np.mean(rms_window)
                 if rms > self.sound_thresh:
-                    logger.info(f"RMS: {rms}. Heard something loud!")
+                    logger.info(f"RMS: {rms: .2f}. Heard something loud!")
                     success = True
                     break
                 if time.time() - listening_start_time > fishing_duration:

@@ -61,11 +61,12 @@ class FishBot(object):
     @staticmethod
     def logout():
         pyautogui.typewrite(message="/logout\n", interval=0.2)
+        time.sleep(20)
 
     @staticmethod
     def login():
         pyautogui.press(keys='enter')
-        time.sleep(30 + random.random() * 10)  # wait for loading
+        time.sleep(20 + random.random() * 10)  # wait for loading
 
     def check_initial_screenshot(self, n=4):
         self.make_screenshot()
@@ -224,7 +225,7 @@ class FishBot(object):
             self.send_float()
             self.make_screenshot(i)
 
-    def start_fish(self, fishing_time_min=20, fishing_time_max=30,
+    def start_fish(self, fishing_time_min=251, fishing_time_max=30,
                    idle_interval_min=5, idle_interval_max=10,
                    max_catched=500):
         tries = 0
@@ -271,8 +272,8 @@ class FishBot(object):
 # Main Function
 #############################################
 if __name__ == '__main__':
-    fb = FishBot(img_thresh=0.8, sound_thresh=200, bbox=(0.3, 0.2, 0.7, 0.8))
+    fb = FishBot(img_thresh=0.90, sound_thresh=200, bbox=(0.3, 0.2, 0.7, 0.8))
     # fb.get_fishing_float_template(n=20)
-    fb.start_fish(fishing_time_min=20, fishing_time_max=30,
+    fb.start_fish(fishing_time_min=25, fishing_time_max=30,
                   idle_interval_min=5, idle_interval_max=10,
                   max_catched=500)

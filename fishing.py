@@ -37,11 +37,12 @@ random.seed(time.time())
 # Function / Class Definitions
 #############################################
 class FishBot(object):
-    def __init__(self, img_thresh=0.8, sound_thresh=200, bbox=(0.3, 0.2, 0.7, 0.8)):
+    def __init__(self, img_thresh=0.95, sound_thresh=200, float_template=[0,1,2,3], bbox=(0.3, 0.2, 0.7, 0.8)):
         self.img_thresh = img_thresh
         self.sound_thresh = sound_thresh
         self.screen_size = pyscreenshot.grab().size
         self.save_find_float = False
+        self.float_template = float_template
         # crop the region for efficiency
         self.box_start_point = (self.screen_size[0] * bbox[0], self.screen_size[1] * bbox[1])
         self.box_end_point = (self.screen_size[0] * bbox[2], self.screen_size[1] * bbox[3])
@@ -123,7 +124,7 @@ class FishBot(object):
 
     def find_float(self):
         logger.info("searching for float")
-        for i in range(0, 4):
+        for i in self.float_template:
             template = cv2.imread(f'float_template/fishing_float_{i}.png', 1)
             screenshot = cv2.imread('fishing_session/screenshot.png', 1)
             w, h = template.shape[1::-1]
@@ -272,8 +273,8 @@ class FishBot(object):
 # Main Function
 #############################################
 if __name__ == '__main__':
-    fb = FishBot(img_thresh=0.90, sound_thresh=200, bbox=(0.3, 0.2, 0.7, 0.8))
+    fb = FishBot(img_thresh=0.95, sound_thresh=200, float_template=[5,6,7], bbox=(0.3, 0.2, 0.7, 0.8))
     # fb.get_fishing_float_template(n=20)
     fb.start_fish(fishing_time_min=25, fishing_time_max=30,
                   idle_interval_min=5, idle_interval_max=10,
-                  max_catched=500)
+                  max_catched=600)

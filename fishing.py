@@ -264,6 +264,10 @@ class FishBot(object):
                 self.login()
                 clock = time.time()
                 logger.info("Back to work lol.")
+                logger.info("Clean the bag")
+                pyautogui.press(keys='5')
+                time.sleep(1)
+                pyautogui.press(keys='6')
 
         logger.info(f"Session Stats: Tries: {tries}, Catched: {catched}.")
         self.logout()
@@ -273,7 +277,7 @@ class FishBot(object):
 # Main Function
 #############################################
 if __name__ == '__main__':
-    fb = FishBot(img_thresh=0.95, sound_thresh=200, float_template=[5,6,7], bbox=(0.3, 0.2, 0.7, 0.8))
+    fb = FishBot(img_thresh=0.95, sound_thresh=200, float_template=[5, 6, 7], bbox=(0.3, 0.2, 0.7, 0.8))
     # fb.get_fishing_float_template(n=20)
     fb.start_fish(fishing_time_min=25, fishing_time_max=30,
                   idle_interval_min=5, idle_interval_max=10,
